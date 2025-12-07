@@ -1,0 +1,204 @@
+# Konfiguration für alle Server
+# Format: "SCREEN_NAME:STOP_COMMAND:TIMEOUT"
+declare -a SERVERS=(
+    "minecraft:stop:60"
+    "vintagestory:/stop:60"
+    # Weitere Server hier hinzufügen...
+)
+
+# Globale Einstellungen
+CHECK_INTERVAL=2         # Sekunden zwischen Checks
+FORCE_SHUTDOWN=true      # true = fährt runter auch wenn Server hängen
+
+# ==========================================
+# FUNKTIONEN
+# ==========================================
+
+check_screen_exists() {
+    screen -list | grep -q "\.$1\s"
+}
+
+send_stop_command() {
+    local screen_name=$1
+    local stop_cmd=$2
+    
+    if check_screen_exists "$screen_name"; then
+        echo "  → Sende '$stop_cmd' an $screen_name..."
+        screen -S "$screen_name" -X stuff "$stop_cmd\n"
+        return 0
+    else
+        echo "  → Screen '$screen_name' läuft nicht"
+        return 1
+    fi
+}
+
+wait_for_screen_exit() {
+    local screen_name=$1
+    local timeout=$2
+    local elapsed=0
+    
+    while [ $elapsed -lt $timeout ]; do
+        if ! check_screen_exists "$screen_name"; then
+            echo "  ✓ $screen_name beendet (${elapsed}s)"
+            return 0
+        fi
+        sleep $CHECK_INTERVAL
+        elapsed=$((elapsed + CHECK_INTERVAL))
+    done
+    
+    echo "  ✗ $screen_name Timeout (${timeout}s erreicht)"
+    return 1
+}
+
+shutdown_server() {
+    local config=$1
+    IFS=':' read -r screen_name stop_cmd timeout <<< "$config"
+    
+    echo ""
+    echo "=== Server: $screen_name ==="
+    
+    if send_stop_command "$screen_name" "$stop_cmd"; then
+        wait_for_screen_exit "$screen_name" "$timeout"
+    fi
+}
+
+shutdown_vm() {
+    echo ""
+    echo "=== VM Shutdown ==="
+    echo "Fahre VM herunter..."
+    sudo shutdown -h now
+}
+
+# ==========================================
+# HAUPTPROGRAMM
+# ==========================================
+
+# Konfiguration für alle Server
+# Format: "SCREEN_NAME:STOP_COMMAND:TIMEOUT"
+declare -a SERVERS=(
+    "minecraft:stop:60"
+    "valheim:quit:45"
+    "terraria:exit:30"
+    # Weitere Server hier hinzufügen...
+)
+
+# Globale Einstellungen
+CHECK_INTERVAL=2         # Sekunden zwischen Checks
+FORCE_SHUTDOWN=true      # true = fährt runter auch wenn Server hängen
+
+# ==========================================
+# FUNKTIONEN
+# ==========================================
+
+check_screen_exists() {
+    screen -list | grep -q "\.$1\s"
+}
+
+send_stop_command() {
+    local screen_name=$1
+    local stop_cmd=$2
+    
+    if check_screen_exists "$screen_name"; then
+        echo "  → Sende '$stop_cmd' an $screen_name..."
+        screen -S "$screen_name" -X stuff "$stop_cmd\n"
+        return 0
+    else
+        echo "  → Screen '$screen_name' läuft nicht"
+        return 1
+    fi
+}
+
+wait_for_screen_exit() {
+    local screen_name=$1
+    local timeout=$2
+    local elapsed=0
+    
+    while [ $elapsed -lt $timeout ]; do
+        if ! check_screen_exists "$screen_name"; then
+            echo "  ✓ $screen_name beendet (${elapsed}s)"
+            return 0
+        fi
+        sleep $CHECK_INTERVAL
+        elapsed=$((elapsed + CHECK_INTERVAL))
+    done
+    
+    echo "  ✗ $screen_name Timeout (${timeout}s erreicht)"
+    return 1
+}
+
+shutdown_server() {
+    local config=$1
+    IFS=':' read -r screen_name stop_cmd timeout <<< "$config"
+    
+    echo ""
+    echo "=== Server: $screen_name ==="
+    
+    if send_stop_command "$screen_name" "$stop_cmd"; then
+        wait_for_screen_exit "$screen_name" "$timeout"
+    fi
+}
+
+shutdown_vm() {
+    echo ""
+    echo "=== VM Shutdown ==="
+    echo "Fahre VM herunter..."
+    sudo shutdown -h now
+}
+
+# ==========================================
+# HAUPTPROGRAMM
+# ==========================================
+
+main() {
+    echo "========================================"
+    echo "  UNIVERSAL SERVER SHUTDOWN"
+    echo "========================================"
+    echo "Gefundene Server: ${#SERVERS[@]}"
+    
+    # Zähle aktive Screens
+    local active=0
+    for server_config in "${SERVERS[@]}"; do
+        IFS=':' read -r screen_name _ _ <<< "$server_config"
+        if check_screen_exists "$screen_name"; then
+            ((active++))
+        fi
+    done
+    
+    echo "Aktive Screens: $active"
+    
+    if [ $active -eq 0 ]; then
+        echo ""
+        echo "Keine aktiven Server gefunden."
+        echo "Fahre VM in 5 Sekunden herunter..."
+        sleep 5
+        shutdown_vm
+        exit 0
+    fi
+    
+    # Stoppe alle Server
+    local failed=0
+    for server_config in "${SERVERS[@]}"; do
+        shutdown_server "$server_config" || ((failed++))
+    done
+    
+    # Zusammenfassung
+    echo ""
+    echo "========================================"
+    echo "Erfolgreich beendet: $((active - failed))/$active"
+    echo "Fehlgeschlagen: $failed/$active"
+    echo "========================================"
+    
+    # Entscheidung: Herunterfahren oder nicht
+    if [ $failed -gt 0 ] && [ "$FORCE_SHUTDOWN" = false ]; then
+        echo ""
+        echo "WARNUNG: Nicht alle Server wurden sauber beendet!"
+        echo "FORCE_SHUTDOWN ist deaktiviert. Abbruch."
+        exit 1
+    fi
+    
+    # VM herunterfahren
+    shutdown_vm
+}
+
+# Skript starten
+main
